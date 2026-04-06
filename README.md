@@ -1,2 +1,14 @@
-# pruebas-de-hipotesis
-implementaciones prácticas de pruebas de hipótesis estadísticas, incluyendo código, datos y análisis de resultados.
+# Pruebas de Hipótesis
+
+Repositorio con implementaciones prácticas de pruebas estadísticas:
+
+- T-Test
+- Chi-cuadrado
+- ANOVA
+- Correlación
+- Regresión
+
+Cada carpeta incluye:
+- Datos
+- Código
+- Interpretación estadística
