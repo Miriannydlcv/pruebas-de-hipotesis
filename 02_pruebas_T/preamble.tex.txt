@@ -1,0 +1,38 @@
+% --- Idioma del documento ---
+\usepackage[spanish]{babel}
+
+% --- Ajustar título del índice ---
+\AtBeginDocument{
+  \renewcommand{\contentsname}{Contenidos}
+}
+
+% --- Control de bloques de código ---
+\usepackage{listings}
+
+\lstset{
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  basicstyle=\ttfamily\small,
+  linewidth=\textwidth,
+  xleftmargin=0pt,
+  xrightmargin=0pt,
+  keepspaces=true
+}
+
+% --- Mejorar separación de palabras y texto largo ---
+\usepackage[stretch=10]{microtype}
+\sloppy
+\emergencystretch=2em
+
+% --- Tipografía mejorada (compatible con XeLaTeX) ---
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}
+
+% --- Ajustes para output de chunks (texto largo) ---
+\usepackage{fancyvrb}
+\fvset{breaklines=true, breakanywhere=true}
+
+

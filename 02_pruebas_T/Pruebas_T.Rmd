@@ -1,0 +1,555 @@
+---
+title: "Análisis inferencial de reclamaciones y riesgo crediticio en el sistema bancario dominicano mediante pruebas t de Student"
+author: "Mirianny De La Cruz Ventura"
+date: "16-12-2025"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+    toc: true
+    df_print: paged
+    toc_depth: 4
+header-includes:
+  - \renewcommand{\contentsname}{Contenidos}
+  - \usepackage{tocloft}
+  - \setlength{\cftbeforetoctitleskip}{2.2cm}
+includes:
+  in_header: preamble.tex
+editor_options:
+  markdown:
+    wrap: 100
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(ggplot2)
+
+
+```
+
+```{r child="Anexo.Pruebas_T.Rmd", include=FALSE}
+
+# Ejecutar todo el código del análisis SIN mostrarlo
+```
+
+\pagebreak
+
+# 1. Introducción
+
+La estadística inferencial permite utilizar muestras para hacer afirmaciones sobre parámetros de una
+población, apoyándose en probabilidades, errores estándar y niveles de confianza.
+
+Uno de sus pilares son las pruebas de hipótesis, que permiten evaluar si una diferencia observada se
+debe al azar o a un efecto real. A diferencia de la prueba Z utilizada en el trabajo previo a este,
+la **prueba t de Student** se utiliza cuando se desea comparar medias, pero **la desviación estándar
+poblacional ($\sigma$) es desconocida** y se estima con la desviación estándar de la muestra (**s**); lo
+anterior hace de las pruebas T una opción más realista frenta a las pruebas z, dado que en la
+práctica casi nunca se conoce la desviación estándar poblacional.
+
+La prueba t de Student es especialmente útil en estudios aplicados con tamaños muestrales pequeños o
+moderados (n \< 30), así como en contextos donde la información proviene de muestras extraídas de
+bases de datos reales, como ocurre en el análisis de operaciones financieras.
+
+Por ello, las pruebas aplicadas aquí, permiten evaluar si los cambios observados tienen
+significancia estadística y relevancia práctica; específicamente se analizan las diferencias en
+comportamientos de clientes y resultados de reclamaciones en bancos dominicanos, identificando
+patrones de riesgo y eficiencia en la resolución de reclamaciones.
+
+# 2.Pruebas T
+
+## 2.1 Caso 1: T para una muestra
+
+**Comparación de proporción de reclamaciones favorables: Banco Popular vs sistema bancario múltiple**
+\
+
+**Objetivo**
+
+Determinar si la proporción de reclamaciones favorables del Banco Popular es menor que la del
+sistema bancario múltiple.
+\
+
+**Hipótesis**
+
+$$H_0:\ \mu \le \mu_0$$
+
+$$H_1:\ \mu > \mu_0$$
+
+Sea:
+
+-   $\mu$ la proporción de reclamaciones favorables del Banco Popular.
+
+-   $\mu_0$ la proporción general de reclamaciones favorables del sistema bancario múltiple.
+
+**Datos**
+
+-   Los datos se obtuvieron de la API pública de estadísticas de la Superintendencia de Bancos de la
+    República Dominicana (SB), endpoint de reclamaciones de EIF. (ver Anexo A).
+
+-   La muestra utilizada tiene tamaño n = 39, pares trimestrales, (ver Anexo A)
+
+-   Se verificaron los supuestos para determinar si la muestra cumplía con los parámetros para
+    realizar la prueba. (Ver anexo B)
+
+**Resultados**
+
+-   Estadístico de prueba:
+
+$$t = \frac{\bar{X} - \mu_0}{s / \sqrt{n}}  $$
+
+-   Grados de libertad:
+
+$$gl = n - 1$$
+
+```{r Resumen de resultados, caso 1, echo=FALSE,results = 'asis',warning = FALSE,message = FALSE}
+cat("\\vspace{0.5cm}\n")
+
+cat(
+  "\n",
+  "**Resultados Prueba t de una muestra** \n\n",
+  "\\vspace{0.3cm}\n",
+  sprintf("**Estadístico t:** %.2f  \n", as.numeric(test_UM$statistic)),
+  sprintf("**Grados de libertad (gl):** %d  \n", test_UM$parameter),
+  sprintf("**p-valor:** %.3e  \n", test_UM$p.value),
+  sprintf(
+    "**IC 95%%:** [%.4f, %.4f]  \n",
+    test_UM$conf.int[1],
+    test_UM$conf.int[2]
+  ),
+  sprintf("**Media muestral:** %.2f%%  \n", media_muestral),
+  "\n"
+)
+
+
+
+
+glue::glue(  "El estadístico t obtenido (t = {round(test_UM$statistic, 2)}, gl = {test_UM$parameter}) es extremo y se ubica completamente en la región crítica definida por la hipótesis unilateral. El p-valor ({format.pval(test_UM$p.value, digits = 3)}) es prácticamente nulo y el intervalo  de confianza no incluye la media del sistema, lo que en conjunto constituye evidencia estadística 
+concluyente contra H0.\n")
+cat("\\vspace{0.5cm}\n")
+
+```
+
+**Tamaño del efecto y significancia práctica**
+
+$$d = \frac{\bar{X} - \mu_0}{s} $$
+
+```{r Significancia práctica, caso 1, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+glue::glue( "\n","El tamaño del efecto estimado (d = {round(d_UM, 2)}) es de {interpretacion_efecto_UM},lo que indica que la diferencia observada no solo es
+estadísticamente significativa, sino sustantiva en términos prácticos.\n")
+
+cat("\\vspace{0.5cm}\n")
+
+```
+
+**Conclusión**
+
+```{r Conclusión caso 1, fig.align='center', fig.width=4.8, fig.height=2, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+glue::glue(  "La distribución mensual del porcentaje de reclamaciones resueltas en Popular se concentra sistemáticamente por debajo del promedio del sistema.")
+
+
+UM_bxp_RP2 <- UM_bxp_RP +
+  labs(
+    title = "Banco Popular"
+  ) +
+  theme(
+    plot.title = element_text(size = 8),
+    plot.margin = margin(6, 6, 6, 6)
+  )
+
+UM_bxp_RS2 <- UM_bxp_RS +
+  labs(
+    title = "Sistema"
+  ) +
+  theme(
+    plot.title = element_text(size = 8),
+    plot.margin = margin(6, 6, 6, 6)
+)
+
+(UM_bxp_RP2 | UM_bxp_RS2)
+
+
+glue::glue("La prueba *t* de una muestra indica que la proporción promedio de reclamaciones
+resueltas en **Popular** es **significativamente menor** que la del sistema bancario
+múltiple, *t*(38) = −145.49, *p* < 0.001.
+
+El tamaño del efecto fue **grande** (*d* = −23.3), lo que evidencia que la diferencia
+no solo es estadísticamente significativa, sino **sustantiva en términos prácticos**.
+
+En conjunto, el gráfico y los resultados inferenciales confirman un desempeño
+persistentemente inferior respecto al sistema, con implicaciones relevantes
+para la eficiencia operativa en la resolución de reclamaciones.")
+
+```
+
+## 2.2 Caso 2.1: T para muestras independientes
+
+**Relación entre límite de crédito y default en clientes**
+\
+
+
+**Objetivo**
+
+Evaluar si los clientes que cayeron en default tienen un límite de crédito promedio diferente al de
+los que no cayeron.
+\
+
+
+**Hipótesis**
+
+$$H_0:\ \mu_{Default} = \mu_{noDefault}$$ $$H_1:\ \mu_{Default} \neq \mu_{noDefault}$$
+
+**Datos** 
+\
+
+- Los datos se obtuvieron del dataset 'Uci_credit_Card' disponible en Kaggle (ver Anexo
+A).
+
+-   La muestra aleatoria utilizada tiene tamaño n = 25 para clientes en default y n = 103 para los
+    que no están en default (ver Anexo A).
+
+-   Se verificaron los supuestos para determinar si los datos cumplían con los parámetros para
+    realizar la prueba. (Ver anexo B)
+\
+
+**Resultados**
+
+-   Estadístico de prueba: $$
+    t = \frac{\bar{X}_1 - \bar{X}_2}{s_p \sqrt{\frac{1}{n_1} + \frac{1}{n_2}}} 
+    $$
+
+-   Desviación combinada (pooled standard deviation):
+
+$$
+s_p = \sqrt{\frac{(n_1 - 1)s_1^2 + (n_2 - 1)s_2^2}{n_1 + n_2 - 2}}
+$$
+
+-   Grados de libertad: $$gl=n1+n2−2$$
+
+```{r Resumen de resultados, caso 2.1, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+cat("\\vspace{0.5cm}\n")
+
+
+cat("\n",
+  "**Resultados — Prueba t de muestras independientes (Default)** \n\n",
+  "\\vspace{0.3cm}\n",
+  sprintf("**Estadístico t:** %.2f  \n", stat.test_default$statistic),
+  sprintf("**Grados de libertad (gl):** %.0f  \n", stat.test_default$df),
+  sprintf(
+    "**p-valor:** %s  \n",
+    format.pval(stat.test_default$p, digits = 3, eps = 1e-16)
+  ),
+  "\n"
+)
+
+
+glue::glue( "La comparación entre clientes en default y no default arroja un estadístico t significativo   (t = {round(stat.test_default$statistic, 2)}, gl = {stat.test_default$df}), con un p-valor de  {format.pval(stat.test_default$p, digits = 3)} y un intervalo de confianza que  no incluye el cero, indicando una diferencia real entre los promedios.\n")
+cat("\\vspace{0.5cm}\n")
+
+
+```
+
+**Tamaño del efecto y significancia práctica**
+
+$$d = \frac{\bar{X}_1 - \bar{X}_2}{s_p} $$
+
+```{r Significancia práctica, caso 2.1, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+glue::glue("El tamaño del efecto estimado (d = {round(efecto_default$effsize, 2)}) 
+es de magnitud moderada, lo que indica que el límite de crédito discrimina 
+entre ambos grupos de manera relevante, aunque no extrema.\n")
+cat("\\vspace{0.5cm}\n")
+
+```
+
+**Conclusión**
+
+```{r Conclusión caso 2.1, fig.align='center', fig.width=6, fig.height=2.5, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+M_indp_hist_Default +
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+  )
+
+glue::glue(
+  "El contraste de medias evidencia que los clientes en default presentan un 
+  límite de crédito promedio significativamente menor que los no default, 
+  t({stat.test_default$df}) = {round(stat.test_default$statistic, 2)}, 
+  p = {format.pval(stat.test_default$p, digits = 3, eps = 1e-16)}. 
+  El tamaño del efecto fue moderado (d = {round(efecto_default$effsize, 2)}), 
+  lo que indica una diferencia consistente y operativamente relevante."
+)
+
+
+```
+
+## 2.3 Caso 2.2: T para muestras independientes
+
+**Diferencias en la proporción de reclamaciones resueltas favorables entre productos 
+transaccionales y crediticios**
+\
+
+**Objetivo**
+
+Evaluar si existen diferencias significativas en la proporción de reclamaciones resueltas favorables
+según tipo de producto.
+\
+
+**Hipótesis**
+
+$$H_0:\ \mu_{Transaccional} = \mu_{Crediticio}$$ $$H_1:\ \mu_{Transaccional} \neq \mu_{Crediticio}$$
+
+**Datos**
+
+-   Los datos se obtuvieron de la API pública de estadísticas de la Superintendencia de Bancos de la
+    República Dominicana (SB), endpoint de reclamaciones de EIF. (ver Anexo A).
+
+-   La muestra utilizada tiene tamaño n = 39 por tipo, 39 crediticios y 39 transaccionales, (ver
+    Anexo A).
+
+-   Se verificaron los supuestos para determinar si los datos cumplían con los parámetros para
+    realizar la prueba. (Ver anexo B).
+
+**Resultados**
+
+-   Estadístico de prueba:
+
+$$
+t = \frac{\bar{X}_1 - \bar{X}_2}{s_p \sqrt{\frac{1}{n_1} + \frac{1}{n_2}}}
+$$
+
+-   Desviación combinada (pooled standard deviation):
+
+$$
+s_p = \sqrt{\frac{(n_1 - 1)s_1^2 + (n_2 - 1)s_2^2}{n_1 + n_2 - 2}}
+$$
+
+-   Grados de libertad:
+
+$$gl=n1+n2−2$$
+
+```{r Resumen de resultados, caso 2.2, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+cat("\\vspace{0.5cm}\n")
+
+cat("\n",
+  "**Resultados — Prueba t de muestras independientes (Reclamaciones)** \n\n",
+  "\\vspace{0.3cm}\n",
+  sprintf("**Estadístico t:** %.2f  \n", stat.test_Rec$statistic),
+  sprintf("**Grados de libertad (gl):** %.0f  \n", stat.test_Rec$df),
+  sprintf(
+    "**p-valor:** %s  \n",
+    format.pval(stat.test_Rec$p, digits = 3, eps = 1e-16)
+  ),
+  sprintf(
+    "**IC 95%%:** [%.4f, %.4f]  \n",
+    stat.test_Rec$conf.low,
+    stat.test_Rec$conf.high
+  ),
+  "\n"
+)
+
+
+
+glue::glue(
+  "La prueba *t* entre productos transaccionales y crediticios arroja un estadístico elevado
+  (*t* = {round(stat.test_Rec$statistic, 2)}, gl = {stat.test_Rec$df}) con un *p*-valor
+  extremadamente pequeño ({format.pval(stat.test_Rec$p, digits = 3)}), lo que evidencia
+  una diferencia clara y sistemática en la proporción de reclamaciones resueltas favorablemente.\n")
+cat("\\vspace{0.5cm}\n")
+
+
+```
+
+**Tamaño del efecto y significancia práctica**
+
+$$d = \frac{\bar{X}_1 - \bar{X}_2}{s_p} $$
+
+```{r Significancia práctica, caso 2.2, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+glue::glue("El tamaño del efecto (d = {round(efecto_Rec$effsize, 2)}) es grande,lo que indica que la diferencia entre tipos de producto es sustantiva desde el punto de vista operativo.\n")
+cat("\\vspace{0.5cm}\n")
+
+```
+
+**Conclusión**
+
+```{r Conclusión caso 2.2, fig.align='center', fig.width=7, fig.height=2.8, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+M_indp_hist_Rec <- M_indp_hist_Rec +
+  labs(title = NULL)
+
+
+(M_indp_hist_Rec | M_indp_density_Rec) +
+  plot_layout(
+    widths = c(1.2, 1),
+    guides = "collect"
+  ) +
+  plot_annotation(
+    title = "Distribución de reclamaciones resueltas favorables por tipo de producto"
+  ) &
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,        # centra el título
+      size  = 9,         # tamaño más pequeño
+      face  = "bold"
+    ),
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.spacing.x = unit(32, "mm"),
+    legend.spacing.y = unit(4, "mm"),
+    legend.key.height = unit(5, "mm")
+  )
+
+
+glue::glue(
+  "Los productos transaccionales muestran una proporción de reclamaciones 
+  resueltas favorablemente significativamente mayor que los productos 
+  crediticios, t({stat.test_Rec$df}) = {round(stat.test_Rec$statistic, 2)}, 
+  p {format.pval(stat.test_Rec$p, digits = 3, eps = 1e-16)}. 
+  El tamaño del efecto fue grande (d = {round(efecto_Rec$effsize, 2)}), 
+  lo que sugiere una brecha estructural en la efectividad de resolución 
+  entre ambos tipos de producto."
+)
+
+
+```
+
+## 2.4 Caso 3: T para muestras relacionadas o pareadas
+
+**Reclamaciones – Cambio en % de reclamaciones resueltas favorables antes                                           y después de la pandemia**
+\
+
+**Objetivo**
+
+Determinar si la digitalización post-pandemia ha impactado la resolución de reclamaciones.
+\
+
+**Hipótesis**
+
+$$H_0:\ \mu_{antes} = \mu_{después}$$ $$H_1:\ \mu_{antes} > \mu_{después}$$
+
+**Datos**
+\
+    -  Los datos se obtuvieron mediante la API pública de estadísticas de la Superintendencia de Bancos
+    de la República Dominicana (SB), endpoint de reclamaciones (ver Anexo A).
+    
+    -   La muestra utilizada tiene tamaño n = 15, pares trimestrales, (ver Anexo A).
+    
+    -   Se verificaron los supuestos para determinar si la muestra cumplía con los parámetros para
+    realizar la prueba. (Ver anexo B).
+\
+
+**Resultados**
+
+ - Estadístico de prueba:
+
+$$
+t = \frac{\bar{D}}{s_D / \sqrt{n}} 
+$$
+
+-   Grados de libertad:
+
+$$gl=n−1$$
+
+```{r Resumen de resultados, Caso 3, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+cat("\\vspace{0.5cm}\n")
+
+cat(
+  "**Resultados — Prueba t pareada** \n\n",
+  "\\vspace{0.3cm}\n",
+  sprintf("**Estadístico t:** %.2f  \n", as.numeric(test_reclamaciones$statistic)),
+  sprintf("**Grados de libertad (gl):** %d  \n", test_reclamaciones$parameter),
+  sprintf(
+    "**p-valor:** %s  \n",
+    format.pval(test_reclamaciones$p.value, digits = 3, eps = 1e-16)
+  ),
+  sprintf(
+    "**IC 95%% de la diferencia media:** [%.4f, %.4f]  \n",
+    test_reclamaciones$conf.int[1],
+    test_reclamaciones$conf.int[2]
+  ),
+"\n"
+)
+
+
+
+glue::glue(
+  "El estadístico *t* pareado (*t* = {round(test_reclamaciones$statistic, 2)}, 
+  gl = {test_reclamaciones$parameter}) no resulta significativo
+  (*p* = {round(test_reclamaciones$p.value, 3)}), y el intervalo de confianza incluye el cero,
+  lo que indica ausencia de un cambio sistemático entre los periodos analizados.\n"
+)
+
+cat("\\vspace{0.5cm}\n")
+
+```
+
+**Tamaño del efecto y significancia práctica**
+
+$$d = \frac{\bar{D}}{s_D} $$
+
+```{r Significancia práctica, Caso 3, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+glue::glue( "El tamaño del efecto estimado (d = {round(d_reclamaciones, 2)}) es negligible, lo que refuerza la falta de relevancia práctica del cambio observado.\n") 
+cat("\\vspace{0.5cm}\n")
+
+```
+
+**Conclusión**
+
+```{r Conclusión caso 3, fig.align='center', fig.width=4, fig.height=2.5, echo=FALSE,warning = FALSE,message = FALSE,results = 'asis'}
+
+par_dens_diff_title <- par_dens_diff +
+  labs(
+    title = "Diferencias pre y post pandemia"
+  )
+
+par_dens_diff_title
+
+glue::glue(
+  "La prueba t pareada no detectó un cambio sistemático en la proporción de 
+  reclamaciones resueltas favorables entre el periodo pre y post pandemia, 
+  t({test_reclamaciones$parameter}) = {round(test_reclamaciones$statistic, 2)}, 
+  p = {format.pval(test_reclamaciones$p.value, digits = 3, eps = 1e-16)}. 
+  El tamaño del efecto fue negligible (d = {round(d_reclamaciones, 2)}), 
+  indicando que la variación observada es compatible con fluctuaciones 
+  aleatorias del proceso."
+)
+
+
+
+```
+
+# 4. Lecciones clave e implicaciones
+
+-   **Evidencia de brecha estructural en la resolución de reclamaciones**, las pruebas aplicadas
+    sobre pct_resueltas, tanto frente a la media del sistema como entre tipos de productos, revelan
+    diferencias consistentes que no se explican por variabilidad muestral aleatoria.
+
+-   **La digitalización no garantiza mejoras automáticas en resultados**, el análisis pareado
+    muestra que cambios operativos asociados al periodo post-pandemia no se traducen necesariamente
+    en mejoras estadísticamente significativas en los indicadores analizados.
+
+-   **La significancia observada depende del tipo de comparación planteada**, mientras que las
+    comparaciones entre instituciones y tipos de productos arrojan resultados contundentes, el
+    análisis temporal pareado no evidencia cambios, resaltando la importancia del diseño del
+    contraste.
+
+-   **El análisis inferencial permite distinguir entre diferencias estructurales y estabilidad
+    operativa**, los resultados sugieren que algunas diferencias responden a características
+    estructurales del sistema o del producto, mientras que otros indicadores permanecen estables en
+    el tiempo pese a cambios contextuales.
+
+**Lo que viene:**
+
+Estos análisis t-test pueden extenderse a ANOVA para comparar múltiples bancos o tipos de productos
+simultáneamente, permitiendo detectar diferencias entre más de dos grupos y controlar variabilidad
+adicional.
+
+# 5. Referencias
+
+-   Lichman, M. (2013). UCI Machine Learning Repository [<http://archive.ics.uci.edu/ml>]. Irvine,
+    CA: University of California, School of Information and Computer Science.
+
+-   Cohen, J. (1988). Statistical Power Analysis for the Behavioral Sciences.
+
+-   Field, A. (2013). Discovering Statistics Using IBM SPSS Statistics.

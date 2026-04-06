@@ -1,0 +1,997 @@
+---
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+    fig_caption: true
+    df_print: paged
+---
+
+\pagebreak
+
+```{r Preparación del entorno,  echo=TRUE, results='hide',warning = FALSE,message = FALSE }
+# A. Obtención y preparación de datos
+# 1. Cargar librerías necesarias
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(ggplot2)
+library(effectsize)
+library(rstatix)
+library(ggpubr)
+citation(package = "pwr")
+library(pwr)
+library(patchwork)
+library(tidyr)
+library(stringr) 
+library(stringi)
+
+
+# 2. Leer API key desde .Renviron
+api_key <- Sys.getenv("API_KEY_SB")
+
+if (api_key == "" || is.na(api_key)) {
+  stop("La API key no está definida. Revisa tu .Renviron (API_KEY_SB).")
+}
+
+# 3. Definir headers con la API key
+headers <- add_headers(
+  "Ocp-Apim-Subscription-Key" = Sys.getenv("API_KEY_SB"),
+  "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+)
+
+```
+
+```{r Obtención de datos caso 1 reclamaciones favorables popular vs sistema,  echo=TRUE,warning = FALSE,message = FALSE }
+
+url_reclamaciones <- "https://apis.sb.gob.do/estadisticas/v2/reclamaciones/eif"
+
+params_reclamaciones <- list(
+  periodoInicial = "2016-01",
+  periodoFinal   = "2025-12",
+  tipoEntidad    = "BM", #Bancos Múltiples,
+  paginas        = 1,
+  registros      = 90000
+)
+
+# Hacer la solicitud GET a la API
+resp_rec <- GET(url_reclamaciones, query = params_reclamaciones, headers)
+
+raw_reclamaciones <- fromJSON(content(resp_rec, "text", encoding = "UTF-8"),
+flatten = TRUE)
+
+if ("Data" %in% names(raw_reclamaciones)) {
+datos_reclamaciones <- as_tibble(raw_reclamaciones$Data)
+} else {
+datos_reclamaciones <- as_tibble(raw_reclamaciones)
+}
+
+## Obtención de datos, Caso 1
+
+#df promedio mensual del sistema
+datos_reclamaciones_SIS <- datos_reclamaciones %>%
+  filter(
+    entidad != "TODOS",
+    resultadoReclamacion != "TODOS"
+  ) %>%
+  group_by(periodo) %>%
+  summarise(
+    total = sum(cantidad, na.rm = TRUE),
+    favorables = sum(cantidad[resultadoReclamacion == "FAVORABLE"], 
+                     na.rm = TRUE),
+    pct_resueltas = ifelse(total > 0, favorables / total, NA_real_)
+  ) %>%
+  mutate(
+    anio = as.integer(substr(periodo, 1, 4)),
+    mes  = substr(periodo, 6, 7),
+    trimestre = case_when(
+      mes == "03" ~ "Q1",
+      mes == "06" ~ "Q2",
+      mes == "09" ~ "Q3",
+      mes == "12" ~ "Q4"
+    )
+  ) %>%
+  filter(!is.na(trimestre))
+
+
+##  Muestra de estudio
+datos_reclamaciones_POPULAR <- datos_reclamaciones %>%
+  filter(
+    entidad == "POPULAR") %>%
+  group_by(periodo) %>%
+  summarise(
+    total = sum(cantidad, na.rm = TRUE),
+    favorables = sum(cantidad[resultadoReclamacion == "FAVORABLE"],
+                     na.rm = TRUE),
+    pct_resueltas = ifelse(total > 0, favorables / total, NA_real_)
+  ) %>%
+  mutate(
+    anio = as.integer(substr(periodo, 1, 4)),
+    mes  = substr(periodo, 6, 7),
+    trimestre = case_when(
+      mes == "03" ~ "Q1",
+      mes == "06" ~ "Q2",
+      mes == "09" ~ "Q3",
+      mes == "12" ~ "Q4"
+    )
+  ) %>%
+  filter(!is.na(trimestre))
+
+##Visualización de resultados
+#View(datos_reclamaciones_SIS)
+#View(datos_reclamaciones_POPULAR)
+
+```
+
+```{r Obtención de datos caso 2 LIMIT_BAL DEFAULT y NO DEFAULT, echo=TRUE,warning = FALSE,message = FALSE }
+
+ Analisis_default <- read.csv(
+  "UCI_Credit_Card.csv",
+  header = TRUE,      # tiene nombres de columnas
+  sep = ",",          # separador
+  stringsAsFactors = FALSE
+)
+
+#View(Analisis_default)
+#colnames(Analisis_default)
+
+## Obtención de datos, Caso 2
+
+Analisis_default_f <- Analisis_default %>%
+  select(ID, AGE, MARRIAGE, SEX,EDUCATION, LIMIT_BAL, 
+         default.payment.next.month,PAY_0, PAY_AMT1, BILL_AMT1) %>%
+  filter(!is.na(LIMIT_BAL), !is.na(default.payment.next.month)) %>%
+  mutate(
+    default = factor(
+      default.payment.next.month,
+      levels = c(0, 1),
+      labels = c("No default", "Default")
+    )
+  )
+
+
+##Visualización de resultados
+#colnames(Analisis_default_f)
+#View(Analisis_default_f)
+nrow(Analisis_default_f)
+table(Analisis_default_f$default)
+
+
+```
+
+```{r Obtención de datos caso 2 reclamaciones P.TRANSACCIONALES VS P.CREDITICIOS, echo=TRUE,warning = FALSE,message = FALSE }
+
+## Obtención de datos, Caso 2
+
+##Agrupación por tipo de producto
+
+#Agrupación Por categoría
+datos_reclamaciones_CA <- datos_reclamaciones %>%
+  filter(
+    entidad != "TODOS",
+    productoServicio != "TODOS",
+    resultadoReclamacion != "TODOS"
+  ) %>%
+  mutate(
+    categoria = case_when(
+      # TARJETAS
+      str_detect(productoServicio,
+                 "TARJETA DE CREDITO|TARJETAS DE DÉBITO|TARJETAS PREPAGO") 
+      ~ "Tarjetas",
+      
+      # CUENTAS
+      str_detect(productoServicio,
+                 "CUENTAS DE AHORRO|CUENTAS CORRIENTES|CUENTA DE AHORRO 
+                 PROGRAMADO|CUENTAS DE PAGO ELECTRÓNICO") ~ "Cuentas",
+      
+      # PRÉSTAMOS
+      str_detect(productoServicio,
+             "PRÉSTAMO|PRÉSTAMOS|MICROCRÉDITO|ADELANTOS") ~ "Préstamos",
+      
+      # INVERSIONES
+      str_detect(productoServicio,
+                 "CERTIFICADOS FINANCIEROS|CERTIFICADOS DE INVERSIÓN|ACCIONES 
+                 COMUNES") ~ "Inversiones",
+      
+      # PAGOS / SERVICIOS
+      str_detect(productoServicio,
+                 "TRANSFERENCIAS|REMESAS|PAGO DE IMPUESTOS|CANJE DE 
+                 DIVISAS|PAGO DE PRODUCTOS Y SERVICIOS") ~ "Pagos / Servicios",
+      
+      TRUE ~ "Otros"
+    )
+  )
+
+
+#Agrupación MACRO
+datos_reclamaciones_CA_MACRO <- datos_reclamaciones_CA %>%
+  mutate(
+    Macro_categoria = case_when(
+      str_detect(productoServicio, 
+                 "TARJETA|CUENTA|TRANSFERENCIA|CHEQUE|PAGO|REMESA") ~ 
+        "Transaccionales",
+      
+      str_detect(productoServicio, 
+                 "PRÉSTAMO|CRÉDITO|MICROCRÉDITO|ADELANTO") ~ "Crediticios",
+      
+      TRUE ~ "Otros"
+    )
+  )
+
+#Visualización de resultados
+#View(datos_reclamaciones)
+#unique(datos_reclamaciones_CA$productoServicio)
+View(datos_reclamaciones_CA)
+View(datos_reclamaciones_CA_MACRO)
+datos_reclamaciones_CA_MACRO %>%
+  distinct(productoServicio, categoria, Macro_categoria)
+
+
+#df base
+datos_reclamaciones_TC <- datos_reclamaciones_CA_MACRO %>%
+  filter(
+    entidad!= "TODOS",
+    resultadoReclamacion != "TODOS",
+    Macro_categoria != "Otros"
+  ) %>%
+  group_by(periodo, Macro_categoria) %>%
+  summarise(
+    total = sum(cantidad, na.rm = TRUE),
+    favorables = sum(cantidad[resultadoReclamacion == "FAVORABLE"],
+                     na.rm = TRUE),
+    pct_resueltas = ifelse(total > 0, favorables / total, NA_real_)
+  ) %>%
+  mutate(
+    anio = as.integer(substr(periodo, 1, 4)),
+    mes  = substr(periodo, 6, 7),
+    trimestre = case_when(
+      mes == "03" ~ "Q1",
+      mes == "06" ~ "Q2",
+      mes == "09" ~ "Q3",
+      mes == "12" ~ "Q4"
+    )
+  ) %>%
+  filter(!is.na(trimestre))
+
+
+
+#Visualización de resultados
+View(datos_reclamaciones_TC)
+nrow(datos_reclamaciones_TC)
+table(datos_reclamaciones_TC$Macro_categoria)
+
+```
+
+
+```{r Obtención de datos caso 3 cambio en % de reclamaciones resueltas,  echo=TRUE,warning = FALSE,message = FALSE}
+
+#Visualización de resultados
+#View(datos_reclamaciones)
+#unique(datos_reclamaciones$resultadoReclamacion)
+
+
+## Obtención de datos, Caso 3
+
+#df base
+datos_reclamaciones_f <- datos_reclamaciones %>%
+  filter(
+    entidad == "POPULAR",
+    resultadoReclamacion != "TODOS"
+  ) %>%
+  group_by(periodo) %>%
+  summarise(
+    total = sum(cantidad, na.rm = TRUE),
+    favorables = sum(cantidad[resultadoReclamacion == "FAVORABLE"], 
+                     na.rm = TRUE),
+    pct_resueltas = ifelse(total > 0, favorables / total, NA_real_)
+  ) %>%
+  mutate(
+    anio = as.integer(substr(periodo, 1, 4)),
+    mes  = substr(periodo, 6, 7),
+    trimestre = case_when(
+      mes == "03" ~ "Q1",
+      mes == "06" ~ "Q2",
+      mes == "09" ~ "Q3",
+      mes == "12" ~ "Q4"
+    )
+  ) %>%
+  filter(!is.na(trimestre))
+
+#periodos antes y después
+antes <- datos_reclamaciones_f %>%
+  filter(anio %in% 2016:2019) %>%
+  mutate(
+    anio_despues = anio + 6,
+    par_anios = paste0(anio, " - ", anio + 6)
+  ) %>%
+  select(trimestre, anio, pct_antes = pct_resueltas, par_anios,  anio_despues)
+
+despues <- datos_reclamaciones_f %>%
+  filter(anio %in% 2022:2025) %>%
+    mutate(
+    anio_antes = anio - 6,
+     anio_despues = anio,
+    par_anios = paste0(anio, " - ", anio + 6)
+  ) %>%
+  select(trimestre, anio, pct_despues = pct_resueltas, par_anios,  anio_despues)
+
+
+#df pareado
+intersect(antes$trimestre, despues$trimestre)
+
+datos_pareados <- inner_join(
+  antes,
+  despues,
+  by = c("trimestre", "anio_despues")
+)
+
+#Visualización de resultados
+nrow(datos_reclamaciones_f)
+#View(datos_reclamaciones_f)
+View(datos_pareados)
+
+```
+
+
+```{r tema para gráficos, include=FALSE}
+tema_limpio <- theme_minimal(base_size = 10) +
+  theme(
+    panel.grid = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+
+    # MÁRGENES MÁS GRANDES EN LOS BORDES
+    plot.margin = margin(t = 10, r = 20, b = 10, l = 20),
+
+    # TEXTO MÁS GRANDE EN EJES
+    axis.title = element_text(size =8),
+    axis.text = element_text(size = 7),
+    plot.title = element_text(hjust = 0.5, face = "bold",size = 9),
+
+    # EXPANSIÓN PARA QUE EL GRÁFICO QUEDE MÁS "PEQUEÑO"
+    axis.ticks.length = unit(2, "mm")
+  )
+
+# Paleta centralizada
+col_bordes            <- "gray30"
+col_crediticios       <- "#F5B041"
+col_transaccionales   <- "#27AE60"
+col_popular           <- "#2874A6"
+col_default           <- "#A93226" 
+col_no_default        <- "#d8e0c7"
+col_antes        <- "#edbe00"  # azul claro suave
+col_despues      <- "#da924f"  # salmón pastel
+col_diferencias  <- "#ab8742"  # gris neutro claro
+col_sistema       <- "#104E8B"
+
+
+scales::show_col(c("#374E55", "#A93226" ))
+
+```
+
+```{r Supuestos Caso 1: reclamaciones favorables popular vs sistema (modalidad 1), fig.align='center', fig.width=6, fig.height=3, echo=TRUE,warning = FALSE,message = FALSE}
+# B. Verificación de supuestos, análisis exploratorio y outputs técnicos
+
+summary(datos_reclamaciones_POPULAR$pct_resueltas)
+
+
+## 1. Valores extremos
+outliers_caso1 <- datos_reclamaciones_POPULAR %>%
+  identify_outliers(pct_resueltas)
+
+knitr::kable(outliers_caso1, digits = 3)
+
+# Visualización preliminar
+UM_bxp_RP <- ggplot(datos_reclamaciones_POPULAR, aes(x = "",y = pct_resueltas)) +
+  geom_boxplot(fill =  col_popular, color = col_bordes) +
+  labs(
+    x = NULL,
+    y = "% Resueltas favorables"
+  ) + scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +  tema_limpio
+
+UM_bxp_RS <- ggplot(datos_reclamaciones_SIS, aes(x = "",y = pct_resueltas)) +
+  geom_boxplot(fill =  col_sistema, color = col_bordes) +
+  labs(
+    x = NULL,
+    y = "% Resueltas favorables"
+  ) + scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +  tema_limpio
+
+glue::glue( "Se identificó un valor atípico correspondiente al período 2016-03
+(pct_resueltas = 0.177). Sin embargo, este valor no fue clasificado como extremo,
+y su presencia no altera de forma sustantiva la forma general de la distribución
+ni el tamaño muestral (n = 39).")
+
+## 2. Normalidad (Shapiro-Wilk)
+shapiro_caso_1 <-datos_reclamaciones_POPULAR %>%
+  shapiro_test(pct_resueltas)
+
+knitr::kable(shapiro_caso_1, digits = 3)
+
+## Evidencia visual de normalidad
+UM_gg_RP <- ggqqplot(
+  data = datos_reclamaciones_POPULAR,
+  x = "pct_resueltas"
+)  +
+  labs(
+    x = "Cuantiles teóricos",
+    y = "Cuantiles observados"
+  ) +
+  tema_limpio
+
+
+(UM_gg_RP | UM_bxp_RP)
+UM_bxp_RS
+glue::glue("La prueba de Shapiro–Wilk aplicada al porcentaje de reclamaciones
+resueltas favorables no resultó significativa (W = 0.962, p = 0.200), por lo que
+no se rechaza la hipótesis de normalidad. La distribución puede considerarse 
+aproximadamente normal.")
+
+glue::glue("Ambos supuestos se cumplen, por lo que el uso de la prueba t de una 
+muestra es estadísticamente adecuado.")
+
+
+
+```
+
+
+```{r Nota 1, valores extremos}
+glue::glue( "Se identificaron valores extremos dentro de cada categoría; sin
+embargo, estos se mantuvieron en el análisis, dado que no se evidenciaron errores
+de medición y el tamaño muestral permite una inferencia robusta.")
+
+
+```
+
+```{r  Supuestos Caso 2: muestras independientes, default, fig.align='center', fig.width=7, fig.height=2.5, echo=TRUE,warning = FALSE,message = FALSE}
+##### Calcular poder estadístico para prueba t de muestras independientes
+# Calcular tamaño de muestra requerido para tener suficiente poder estadístico
+options(scipen = 999)
+
+
+pwr::pwr.t.test(n = NULL, d = .50, sig.level = .05, 
+                power = .80, type = "two.sample",
+                alternative = "two.sided")
+
+pwr::pwr.t.test(n = NULL, d = .80, sig.level = .05, 
+                power = .80, type = "two.sample",
+                alternative = "two.sided")
+
+
+# Generar muestras aleatorias 
+n_Adf <- 128
+set.seed(123)
+muestra_Adefault_f <- sample_n(Analisis_default_f, n_Adf)
+
+#View(muestra_Adefault_f)
+
+
+##### Visualización preliminar los datos
+
+M_indp_hist_Default <- ggplot(
+  muestra_Adefault_f,
+  aes(x = LIMIT_BAL, fill = default)
+) +
+  geom_histogram(
+    bins = 30,
+    color = "gray30",
+    alpha = 0.7
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Default"     = col_default,
+      "No default" = col_no_default
+    )
+  ) +
+  facet_wrap(~ default, scales = "free_y") +
+  labs(
+    title = "Distribución del límite de crédito según estado de default",
+    x = "Límite de crédito aprobado",
+    y = "Frecuencia",
+    fill = NULL
+  ) +
+  tema_limpio
+
+
+M_indp_hist_Default
+
+
+##### Estadísticas descriptivas 
+summary(muestra_Adefault_f$LIMIT_BAL)
+
+#----------------------------- 
+##### Verificar los supuestos distribucionales 
+### Supuesto 1. Normalidad 
+shapiro_caso2_1 <- muestra_Adefault_f %>% 
+  group_by(default) %>% 
+  shapiro_test(LIMIT_BAL) 
+
+knitr::kable(shapiro_caso2_1, digits = 3)
+
+M_indp_qq_Default <- ggqqplot(data = muestra_Adefault_f, x = "LIMIT_BAL", 
+         facet.by = "default")  +
+  labs(
+    x = "Cuantiles teóricos",
+    y = "Cuantiles observados"
+  ) +  tema_limpio
+
+
+M_indp_qq_Default
+
+glue::glue( "La prueba de Shapiro–Wilk indicó desviaciones de la normalidad en 
+ambos grupos: No default: W = 0.937, p < .001   # Default: W = 0.841, p = .001 
+No obstante, dado el tamaño muestral moderado y el carácter relativamente  
+robusto de la prueba t frente a desviaciones moderadas de normalidad, la  
+violación se considera tolerable.")
+
+### Supuesto 2. Homogeneidad de varianzas 
+
+levene_default <- muestra_Adefault_f %>% 
+  levene_test(LIMIT_BAL ~ default) 
+
+knitr::kable(levene_default, digits = 3)
+
+glue::glue("La prueba de Levene no fue significativa (F = 2.05, p = 0.155), 
+indicando que no existen diferencias estadísticamente significativas entre las 
+varianzas de  ambos grupos.")
+
+### Supuesto 3. Valores extremos 
+
+muestra_Adefault_f %>% 
+  group_by(default) %>% 
+  identify_outliers(LIMIT_BAL) 
+
+M_indp_bxp_Default <- ggboxplot( data = muestra_Adefault_f,  x = "default",
+  y = "LIMIT_BAL",  fill = "default",  palette = c("Default" = col_default,
+    "No default" = col_no_default ),  add = "jitter")  +  
+  labs(
+    title = "Distribución del límite de crédito según estado de default",
+    y = "Balance límite"
+    ) +  
+  tema_limpio +
+  theme(
+    axis.title.x = element_blank(),
+    legend.title = element_blank()
+  )
+
+
+M_indp_bxp_Default
+
+##No se encontraron valores extremos
+
+glue::glue("A pesar de la desviación de la normalidad, la homogeneidad de 
+varianzas se cumple y los tamaños muestrales son suficientes. En consecuencia, 
+la prueba t para muestras independientes con varianzas iguales es apropiada.")
+
+
+ 
+```
+
+
+```{r  Supuestos Caso 2: muestras independientes, reclamaciones, fig.align='center', fig.width=7, fig.height=2.8, echo=TRUE,warning = FALSE,message = FALSE}
+## Supuestos caso 2
+
+M_indp_hist_Rec <- ggplot(
+  datos_reclamaciones_TC,
+  aes(x = pct_resueltas, fill = Macro_categoria)
+) +
+  geom_histogram(
+    bins = 30,
+    color = "gray30",
+    alpha = 0.7
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Crediticios"     = col_crediticios,
+      "Transaccionales" = col_transaccionales
+    )
+  ) +
+  facet_wrap(~ Macro_categoria, scales = "free_y") +
+  labs(
+    title = "Histograma % reclamaciones favorables por tipo de producto",
+    x = "% reclamaciones favorables",
+    y = "Frecuencia",
+    fill = NULL
+  ) +
+  tema_limpio
+
+
+M_indp_hist_Rec  
+
+##### Estadísticas descriptivas 
+summary(datos_reclamaciones_TC$pct_resueltas)
+
+
+#----------------------------- 
+##### Verificar los supuestos distribucionales 
+### Supuesto 1. Normalidad 
+shapiro_caso2_2 <- datos_reclamaciones_TC %>% 
+  group_by(Macro_categoria) %>% 
+  shapiro_test(pct_resueltas) 
+
+knitr::kable(shapiro_caso2_2, digits = 3)
+
+M_indp_qq_Rec <- ggqqplot(data = datos_reclamaciones_TC, x = "pct_resueltas", 
+         facet.by = "Macro_categoria")  +  tema_limpio
+
+M_indp_qq_Rec
+
+#Crediticios: W = 0.845, p < .001 → desviación de normalidad
+
+glue::glue("Transaccionales: W = 0.951, p = 0.089 → normalidad aceptable
+La falta de normalidad en el grupo crediticio se interpreta con cautela, 
+dado que ambas muestras presentan tamaños equivalentes (n = 39).")
+
+### Supuesto 2. Homogeneidad de varianzas 
+levels(factor(datos_reclamaciones_TC$Macro_categoria))
+
+levene_rec <- datos_reclamaciones_TC %>%
+  ungroup() %>%
+  filter(Macro_categoria %in% c("Crediticios", "Transaccionales")) %>%
+  mutate(Macro_categoria = factor(Macro_categoria)) %>%
+  levene_test(pct_resueltas ~ Macro_categoria)
+
+
+knitr::kable(levene_rec, digits = 3)
+
+glue::glue("La prueba de Levene no fue significativa (F = 3.364, p = 0.071), por
+lo que se asume igualdad de varianzas.")
+
+### Supuesto 3. Valores extremos 
+
+outliers_caso2_2 <- datos_reclamaciones_TC %>% 
+  group_by(Macro_categoria) %>% 
+  identify_outliers(pct_resueltas) 
+
+knitr::kable(outliers_caso2_2, digits = 3)
+
+M_indp_bxp_Rec <- ggboxplot(data = datos_reclamaciones_TC, x = "Macro_categoria",
+y = "pct_resueltas",  fill = "Macro_categoria", palette = c("Crediticios" = 
+col_crediticios, "Transaccionales" = col_transaccionales), 
+add =  "jitter") +
+  labs(
+    y = "% Resueltas") +  tema_limpio
+
+
+M_indp_bxp_Rec <- M_indp_bxp_Rec +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x  = element_blank(),   # quita etiquetas (Crediticios / Transaccionales)
+    legend.title = element_blank()
+  )
+
+
+# Curvas de densidad: Crediticios vs Transaccionales
+
+M_indp_density_Rec <- ggplot(datos_reclamaciones_TC,
+                           aes(x = pct_resueltas,
+                               fill = Macro_categoria,
+                               color = Macro_categoria)) +
+  geom_density(alpha = 0.35, linewidth = 1) +
+  scale_fill_manual(
+    values = c(
+      "Crediticios" = col_crediticios,       
+      "Transaccionales" = col_transaccionales   
+    )
+  ) +
+  scale_color_manual(
+    values = c(
+      "Crediticios" = col_crediticios,       
+      "Transaccionales" = col_transaccionales   
+    )
+  ) +
+  labs(
+    x = "% Resueltas favorables",
+    y = "Densidad",
+    fill = "Tipo de producto",
+    color = "Tipo de producto"
+  ) +
+  tema_limpio +
+  theme(
+    legend.title = element_blank()
+  )
+
+
+(M_indp_bxp_Rec | M_indp_density_Rec) +
+  plot_layout(
+    widths = c(1.2, 1),
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.spacing.x = unit(32, "mm"),
+    legend.spacing.y = unit(4, "mm"),
+    legend.key.height = unit(5, "mm")
+  )
+
+glue::glue("Aunque la normalidad no se cumple plenamente en uno de los grupos,
+la igualdad de varianzas y el tamaño muestral balanceado permiten aplicar la prueba
+t de muestras independientes con suficiente robustez.")
+
+```
+
+
+```{r Nota 2, valores extremos}
+glue::glue( "Se identificaron valores extremos dentro de cada categoría; sin 
+embargo, estos se mantuvieron en el análisis, dado que no se evidenciaron 
+errores de medición y el tamaño muestral permite una inferencia robusta.")
+```
+
+
+```{r  Supuestos Caso 3: muestras pareadas o repetidas, fig.align='center', fig.width=7, fig.height=2.8, echo=TRUE,warning = FALSE,message = FALSE}
+## Supuestos caso 3
+
+# Crear la variable de diferencias
+datos_pareados <- datos_pareados %>%
+  mutate(
+    diff_pct = pct_despues - pct_antes
+  )
+
+## Supuesto 1: muestras pareadas
+
+glue::glue("Las muestras son pareadas porque las mediciones antes y después
+provienen de las mismas unidades de análisis.")
+
+## Supuesto 2: Ausencia de outliers
+outliers_diff <- datos_pareados %>%
+  identify_outliers(diff_pct)
+
+outliers_diff
+
+
+glue::glue("No se identificaron valores extremos en la variable de diferencias,
+y los gráficos exploratorios confirmaron una distribución simétrica y estable.")
+
+##### Visualización preliminar los datos 
+##### 
+
+#QQ-Plot
+par_qq_diff <- ggqqplot(
+  datos_pareados,
+  x = "diff_pct",
+) +
+  labs(
+    x = "Cuantiles teóricos",
+    y = "Cuantiles observados"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  tema_limpio
+
+
+#Densidad
+par_dens_diff <- ggplot(datos_pareados, aes(x = diff_pct)) +
+  geom_density(fill = col_diferencias, alpha = 0.6) +
+  labs(
+    x = "% Resueltas favorables",
+    y = "Densidad"
+  ) +
+  tema_limpio
+
+#Boxplots
+par_antes_box_diff <- ggplot(datos_pareados, aes( x = "", y = pct_antes)) +
+  geom_boxplot(fill =  col_antes, color = col_bordes) +
+  labs(
+    title = "Antes",
+    x = NULL,
+    y = "% Resueltas favorables"
+  ) + scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +  tema_limpio
+
+
+par_des_box_diff <- ggplot(datos_pareados, aes(x = "",y = pct_despues)) +
+  geom_boxplot(fill =  col_despues, color = col_bordes) +
+  labs(
+    title = "Después",
+    x = NULL,
+    y = "% Resueltas  favorables"
+  ) + scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +  tema_limpio
+
+
+(par_qq_diff | par_dens_diff) 
+(par_antes_box_diff | par_des_box_diff)
+
+
+
+## Supuesto 3: Prueba de normalidad de Shapiro-Wilk (SOBRE LAS DIFERENCIAS)
+shapiro_caso3 <- shapiro_test(datos_pareados, diff_pct)
+knitr::kable(shapiro_caso3, digits = 3)
+
+glue::glue("La prueba de Shapiro–Wilk aplicada a las diferencias (diff_pct) no
+fue significativa (W = 0.982, p = 0.979), indicando que las diferencias siguen
+una distribución normal.")
+
+glue::glue("Todos los supuestos estadísticos se cumplen plenamente. Por tanto,
+la prueba t pareada es totalmente adecuada para evaluar el cambio en la
+proporción de reclamaciones resueltas favorables antes y después de la pandemia.")
+
+```
+
+```{r Resultados Caso 1 – reclamaciones (modalidad 1)}
+# C. Código completo de análisis
+
+# 1. Estadístico de prueba
+
+# Nivel promedio esperado (μ₀): promedio mensual del sistema
+mu_SIS <- datos_reclamaciones_SIS%>%
+  summarise(mu = mean(pct_resueltas, na.rm = TRUE)) %>%
+  pull(mu)
+
+mu<- mean(
+  datos_reclamaciones_POPULAR$pct_resueltas,
+  na.rm = TRUE
+)
+
+
+# t de Student (una muestra)
+test_UM <- t.test(
+  datos_reclamaciones_POPULAR$pct_resueltas,
+  mu = mu_SIS,
+  alternative = "less"
+)
+
+# 2. Tamaño del efecto
+media_muestral <- mean(
+  datos_reclamaciones_POPULAR$pct_resueltas,
+  na.rm = TRUE
+)
+
+sd_muestra <- sd(
+  datos_reclamaciones_POPULAR$pct_resueltas,
+  na.rm = TRUE
+)
+
+d_UM <- (media_muestral - mu_SIS) / sd_muestra
+
+
+interpretar_d <- function(d) {
+  if (abs(d) < 0.2) {
+    return("Efecto pequeño")
+  } else if (abs(d) < 0.5) {
+    return("Efecto moderado")
+  } else {
+    return("Efecto grande")
+  }
+}
+
+interpretacion_efecto_UM <- interpretar_d(
+  d_UM
+)
+
+
+###Resumen
+cat(
+  "Media poblacional:",  mu_SIS, "\n",
+  "Media muestral:",  media_muestral, "\n",
+  "Desv. muestral:", sd_muestra, "\n",
+  "Tamaño del efecto:", d_UM , interpretacion_efecto_UM, "\n"
+)
+   test_UM
+
+
+```
+
+```{r Resultados Caso 2 - Default (modalidad 2), warning = FALSE}
+## Resultados caso 2
+
+#----------------------------- 
+##### Estadísticas descriptivas 
+summary(muestra_Adefault_f$LIMIT_BAL)
+
+#----------------------------- 
+##### Realizar la prueba t de muestras independientes 
+
+stat.test_default <- muestra_Adefault_f %>% 
+  t_test(LIMIT_BAL ~ default, var.equal = TRUE) 
+
+
+#----------------------------- 
+# Tamaño del efecto
+
+efecto_default <- cohens_d(
+  LIMIT_BAL ~ default,
+  data = muestra_Adefault_f
+)
+
+knitr::kable(stat.test_default, digits = 3)
+knitr::kable(efecto_default, digits = 3)
+
+```
+
+```{r Resultados Caso 2 - Reclamaciones (modalidad 2), warning = FALSE}
+## Resultados caso 2
+
+##### Estadísticas descriptivas 
+summary(datos_reclamaciones_TC$pct_resueltas)
+
+
+#----------------------------- 
+##### Realizar la prueba t de muestras independientes 
+
+stat.test_Rec <- datos_reclamaciones_TC %>% 
+  ungroup() %>% 
+  t_test(
+    pct_resueltas ~ Macro_categoria,
+    var.equal = TRUE
+  )
+
+#----------------------------- 
+# Tamaño del efecto
+
+efecto_Rec <- datos_reclamaciones_TC %>%
+  ungroup() %>%
+  cohens_d(pct_resueltas ~ Macro_categoria)
+
+knitr::kable(stat.test_Rec, digits = 3)
+knitr::kable(efecto_Rec, digits = 3)
+```
+
+```{r Resultados Caso 3 - muestras pareadas, warning = FALSE}
+## Resultados caso 3
+
+
+##### Estadísticas descriptivas 
+summary(datos_pareados$diff_pct)
+
+
+# 1. Estadístico de prueba (t pareada)
+test_reclamaciones <- t.test(
+  datos_pareados$pct_despues,
+  datos_pareados$pct_antes,
+  paired = TRUE,
+  alternative = "two.sided"
+)
+
+# 2. Tamaño del efecto
+# Tamaño del efecto correcto
+datos_long <- datos_pareados %>%
+  select(pct_antes, pct_despues) %>%
+  pivot_longer(
+    cols = c(pct_antes, pct_despues),
+    names_to = "momento",
+    values_to = "pct_resueltas"
+  )
+
+cohen_d_reclamaciones <- cohens_d(
+  pct_resueltas ~ momento,
+  data = datos_long,
+  paired = TRUE
+)
+
+
+
+print(test_reclamaciones)
+# Extraer valor numérico del efecto
+d_reclamaciones <- cohen_d_reclamaciones$effsize
+d_reclamaciones
+knitr::kable(cohen_d_reclamaciones, digits = 3)
+
+
+```
+
+
+```{r guardar_figuras, include=FALSE}
+if (!dir.exists("figures")) dir.create("figures")
+
+#modalidad 1, reclamaciones
+try( ggsave("figures/UM_bxp_RP.png", UM_bxp_RP, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/UM_gg_RP.png", UM_gg_RP, width = 6, height = 4), silent = TRUE )
+
+#modalidad 2, Default
+try( ggsave("figures/M_indp_hist_Default.png", M_indp_hist_Default, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/M_indp_qq_Default.png", M_indp_qq_Default, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/M_indp_bxp_Default.png", M_indp_bxp_Default, width = 6, height = 4), silent = TRUE )
+
+#modalidad 2, reclamaciones
+try( ggsave("figures/M_indp_hist_Rec.png", M_indp_hist_Rec, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/M_indp_qq_Rec.png", M_indp_qq_Rec, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/M_indp_bxp_Rec.png", M_indp_bxp_Rec, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/M_indp_density_Rec.png", M_indp_density_Rec, width = 6, height = 4), silent = TRUE )
+
+#modalidad 3, reclamaciones
+
+try( ggsave("figures/par_qq_diff.png", par_qq_diff, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/par_dens_diff.png", par_dens_diff, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/par_antes_box_diff.png", par_antes_box_diff, width = 6, height = 4), silent = TRUE )
+try( ggsave("figures/par_des_box_diff.png", par_des_box_diff, width = 6, height = 4), silent = TRUE )
+
+```
